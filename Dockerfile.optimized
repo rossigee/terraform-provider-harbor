@@ -1,0 +1,18 @@
+# Harbor Crossplane Provider with optimized User management fix - using static binary
+FROM harbor.golder.lan/library/provider-harbor:v0.2.2
+
+# Switch to root to modify the image
+USER root
+
+# Copy our statically linked terraform provider binary with optimized user handling
+COPY terraform-provider-harbor-static-v2 /tmp/terraform-provider-harbor-fixed
+
+# Replace the original binary in the mirror location with our static one
+RUN cp /tmp/terraform-provider-harbor-fixed /terraform/provider-mirror/registry.terraform.io/goharbor/harbor/3.10.19/linux_amd64/terraform-provider-harbor_v3.10.19 && \
+    chmod +x /terraform/provider-mirror/registry.terraform.io/goharbor/harbor/3.10.19/linux_amd64/terraform-provider-harbor_v3.10.19 && \
+    rm /tmp/terraform-provider-harbor-fixed
+
+# Switch back to non-root user  
+USER 2000:2000
+
+ENTRYPOINT ["/usr/local/bin/provider"]

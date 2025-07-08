@@ -1,49 +1,62 @@
 package provider
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// TestUserIDHandling tests the ID handling logic for Crossplane compatibility
-func TestUserIDHandling(t *testing.T) {
+// TestUserIDDetection tests the numeric ID detection logic
+func TestUserIDDetection(t *testing.T) {
 	tests := []struct {
-		name     string
-		inputID  string
-		expected string
+		name        string
+		inputID     string
+		isNumericId bool
 	}{
 		{
-			name:     "numeric ID path",
-			inputID:  "/users/123",
-			expected: "/users/123",
+			name:        "numeric ID path",
+			inputID:     "/users/123",
+			isNumericId: true,
 		},
 		{
-			name:     "username without prefix",
-			inputID:  "testuser",
-			expected: "/users/testuser",
+			name:        "numeric ID with large number",
+			inputID:     "/users/999999",
+			isNumericId: true,
 		},
 		{
-			name:     "username with special characters",
-			inputID:  "test-user-123",
-			expected: "/users/test-user-123",
+			name:        "username without prefix",
+			inputID:     "testuser",
+			isNumericId: false,
 		},
 		{
-			name:     "empty ID",
-			inputID:  "",
-			expected: "",
+			name:        "username with prefix",
+			inputID:     "/users/testuser",
+			isNumericId: false,
+		},
+		{
+			name:        "username with special characters",
+			inputID:     "/users/test-user-123",
+			isNumericId: false,
+		},
+		{
+			name:        "empty ID",
+			inputID:     "",
+			isNumericId: false,
+		},
+		{
+			name:        "malformed path",
+			inputID:     "/users/",
+			isNumericId: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the ID handling logic from resourceUserRead
-			currentId := tt.inputID
-			if currentId != "" && !strings.HasPrefix(currentId, "/users/") {
-				currentId = "/users/" + currentId
-			}
+			// Test the regex pattern used in resourceUserRead
+			isNumericId := regexp.MustCompile(`^/users/\d+$`).MatchString(tt.inputID)
 			
-			if currentId != tt.expected {
-				t.Errorf("ID handling failed: got %s, want %s", currentId, tt.expected)
+			if isNumericId != tt.isNumericId {
+				t.Errorf("ID detection failed for %s: got %v, want %v", tt.inputID, isNumericId, tt.isNumericId)
 			}
 		})
 	}

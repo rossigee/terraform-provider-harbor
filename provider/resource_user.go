@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/goharbor/terraform-provider-harbor/client"
@@ -73,40 +74,37 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 	apiClient := m.(*client.Client)
 	
-	// Check if this is a new resource (ID not in the expected format)
-	// Harbor IDs should be like /users/123, not just a username
 	currentId := d.Id()
-	if currentId != "" && !strings.HasPrefix(currentId, "/users/") {
-		// This is likely an external-name, prepend /users/ for the API call
-		currentId = "/users/" + currentId
+	if currentId == "" {
+		return nil
 	}
 	
-	// First try to read using the ID directly (normal case)
-	resp, _, respCode, err := apiClient.SendRequest("GET", currentId, nil, 200)
+	// Check if the ID is in the expected numeric format (/users/123)
+	// If not, it's likely a username from Crossplane's external-name
+	isNumericId := regexp.MustCompile(`^/users/\d+$`).MatchString(currentId)
 	
-	// If we get a 404 or validation error, the ID might be a username instead of numeric ID
-	// This can happen when using external-name annotations in Crossplane
-	if (respCode == 404 || respCode == 422) && err != nil {
-		// Try to find the user by searching all users for matching username
-		allUsersResp, _, _, searchErr := apiClient.SendRequest("GET", models.PathUsers, nil, 200)
-		if searchErr != nil {
-			return fmt.Errorf("Failed to search for user %s: %v", d.Id(), searchErr)
-		}
-		
-		var allUsers []models.UserBody
-		searchErr = json.Unmarshal([]byte(allUsersResp), &allUsers)
-		if searchErr != nil {
-			return fmt.Errorf("Failed to parse users list: %v", searchErr)
-		}
-		
-		// Look for user with matching username
-		var targetUser *models.UserBody
-		searchUsername := d.Id()
-		// Strip /users/ prefix if present
+	// If it's not a numeric ID, we need to search for the user by username
+	if !isNumericId {
+		// Extract username from the ID (remove /users/ prefix if present)
+		searchUsername := currentId
 		if strings.HasPrefix(searchUsername, "/users/") {
 			searchUsername = strings.TrimPrefix(searchUsername, "/users/")
 		}
 		
+		// Search for the user by username
+		allUsersResp, _, _, err := apiClient.SendRequest("GET", models.PathUsers, nil, 200)
+		if err != nil {
+			return fmt.Errorf("Failed to search for users: %v", err)
+		}
+		
+		var allUsers []models.UserBody
+		err = json.Unmarshal([]byte(allUsersResp), &allUsers)
+		if err != nil {
+			return fmt.Errorf("Failed to parse users list: %v", err)
+		}
+		
+		// Look for user with matching username
+		var targetUser *models.UserBody
 		for _, user := range allUsers {
 			if user.Username == searchUsername {
 				targetUser = &user
@@ -134,7 +132,8 @@ func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 		return nil
 	}
 	
-	// If the direct read succeeded, parse the response normally
+	// ID is already in numeric format, proceed with normal read
+	resp, _, _, err := apiClient.SendRequest("GET", currentId, nil, 200)
 	if err != nil {
 		return err
 	}
