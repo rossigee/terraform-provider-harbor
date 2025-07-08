@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/goharbor/terraform-provider-harbor/client"
 	"github.com/goharbor/terraform-provider-harbor/models"
@@ -71,10 +72,73 @@ func resourceUserCreate(d *schema.ResourceData, m interface{}) error {
 
 func resourceUserRead(d *schema.ResourceData, m interface{}) error {
 	apiClient := m.(*client.Client)
-	resp, _, _, err := apiClient.SendRequest("GET", d.Id(), nil, 200)
+	
+	// Check if this is a new resource (ID not in the expected format)
+	// Harbor IDs should be like /users/123, not just a username
+	currentId := d.Id()
+	if currentId != "" && !strings.HasPrefix(currentId, "/users/") {
+		// This is likely an external-name, prepend /users/ for the API call
+		currentId = "/users/" + currentId
+	}
+	
+	// First try to read using the ID directly (normal case)
+	resp, _, respCode, err := apiClient.SendRequest("GET", currentId, nil, 200)
+	
+	// If we get a 404 or validation error, the ID might be a username instead of numeric ID
+	// This can happen when using external-name annotations in Crossplane
+	if (respCode == 404 || respCode == 422) && err != nil {
+		// Try to find the user by searching all users for matching username
+		allUsersResp, _, _, searchErr := apiClient.SendRequest("GET", models.PathUsers, nil, 200)
+		if searchErr != nil {
+			return fmt.Errorf("Failed to search for user %s: %v", d.Id(), searchErr)
+		}
+		
+		var allUsers []models.UserBody
+		searchErr = json.Unmarshal([]byte(allUsersResp), &allUsers)
+		if searchErr != nil {
+			return fmt.Errorf("Failed to parse users list: %v", searchErr)
+		}
+		
+		// Look for user with matching username
+		var targetUser *models.UserBody
+		searchUsername := d.Id()
+		// Strip /users/ prefix if present
+		if strings.HasPrefix(searchUsername, "/users/") {
+			searchUsername = strings.TrimPrefix(searchUsername, "/users/")
+		}
+		
+		for _, user := range allUsers {
+			if user.Username == searchUsername {
+				targetUser = &user
+				break
+			}
+		}
+		
+		if targetUser == nil {
+			// User doesn't exist - clear the ID to trigger creation
+			d.SetId("")
+			return nil
+		}
+		
+		// Update the ID to use the numeric user ID for future operations
+		userIdPath := fmt.Sprintf("/users/%d", targetUser.UserID)
+		d.SetId(userIdPath)
+		
+		// Set the user data from the found user
+		d.Set("username", targetUser.Username)
+		d.Set("full_name", targetUser.Realname)
+		d.Set("email", targetUser.Email)
+		d.Set("admin", targetUser.SysadminFlag)
+		d.Set("comment", targetUser.Comment)
+		
+		return nil
+	}
+	
+	// If the direct read succeeded, parse the response normally
 	if err != nil {
 		return err
 	}
+	
 	var jsonData models.UserBody
 	err = json.Unmarshal([]byte(resp), &jsonData)
 	if err != nil {
