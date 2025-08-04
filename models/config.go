@@ -5,6 +5,7 @@ var PathConfig = "/configurations"
 type ConfigBodyAuthPost struct {
 	OidcVerifyCert        bool   `json:"oidc_verify_cert"`
 	OidcAutoOnboard       bool   `json:"oidc_auto_onboard"`
+	OidcLogout            bool   `json:"oidc_logout"`
 	OidcUserClaim         string `json:"oidc_user_claim,omitempty"`
 	LdapGroupSearchFilter string `json:"ldap_group_search_filter,omitempty"`
 	AuthMode              string `json:"auth_mode,omitempty"`
@@ -52,7 +53,7 @@ type ConfigBodySystemPost struct {
 	ScannerSkipUpdatePulltime  bool   `json:"scanner_skip_update_pulltime"`
 	AuditLogForwardEndpoint    string `json:"audit_log_forward_endpoint,omitempty"`
 	SkipAuditLogDatabase       bool   `json:"skip_audit_log_database"`
-	BannerMessage              string `json:"banner_message,omitempty"`
+	BannerMessage              string `json:"banner_message"`
 }
 
 type ConfigBodyResponse struct {
@@ -64,6 +65,10 @@ type ConfigBodyResponse struct {
 		Editable bool `json:"editable,omitempty"`
 		Value    bool `json:"value,omitempty"`
 	} `json:"oidc_auto_onboard,omitempty"`
+	OidcLogout struct {
+		Editable bool `json:"editable,omitempty"`
+		Value    bool `json:"value,omitempty"`
+	} `json:"oidc_logout,omitempty"`
 	OidcUserClaim struct {
 		Editable bool   `json:"editable,omitempty"`
 		Value    string `json:"value,omitempty"`
